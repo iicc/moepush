@@ -27,6 +27,8 @@ export const {
             GithubProvider({
                 clientId: process.env.AUTH_GITHUB_ID!,
                 clientSecret: process.env.AUTH_GITHUB_SECRET!,
+                checks: ["pkce", "state"], // 新增这一行：跳过对新版 iss 参数的隐式发行方校验
+                issuer: "https://github.com/login/oauth",
             }),
             CredentialsProvider({
                 name: "credentials",
