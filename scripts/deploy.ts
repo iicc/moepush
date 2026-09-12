@@ -5,7 +5,12 @@ import * as path from 'path';
 const dbName = process.env.D1_DATABASE_NAME || 'moepush-db';
 const cloudflareApiToken = process.env.CLOUDFLARE_API_TOKEN;
 const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-const projectName = process.env.PROJECT_NAME || 'moepush';
+const rawProjectName = (process.env.PROJECT_NAME || 'moepush').trim();
+// Cloudflare Pages 项目名仅允许小写字母/数字/连字符，自动规范化，避免 Secret 含大写或下划线导致创建失败(400)
+const projectName = rawProjectName
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 
 const setupWranglerConfig = () => {
     const wranglerExamplePath = path.resolve('wrangler.example.json');
@@ -99,8 +104,11 @@ const main = async () => {
         if (!cloudflareApiToken || !accountId) {
             throw new Error('缺少必需的环境变量：CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID');
         }
-        if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(projectName)) {
-            throw new Error(`PROJECT_NAME "${projectName}" 非法，必须匹配 ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`);
+        if (projectName !== rawProjectName) {
+            console.warn(`⚠️ PROJECT_NAME 已自动规范化为 "${projectName}"（原始值 "${rawProjectName}" 含非法字符）`);
+        }
+        if (!projectName || !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(projectName)) {
+            throw new Error(`PROJECT_NAME 规范化后仍非法："${rawProjectName}" -> "${projectName}"，仅允许小写字母/数字/连字符，且不能为空`);
         }
 
         setupWranglerConfig();
