@@ -72,86 +72,39 @@ const deployPages = () => {
     console.log('Deployment completed successfully');
 };
 
-const checkProjectExists = async () => {
+// 使用官方 wrangler CLI 创建 Pages 项目（请求构造正确、报错清晰），并对"已存在"做幂等容错。
+const ensurePagesProject = () => {
+    console.log(`Ensuring Cloudflare Pages project "${projectName}" exists...`);
     try {
-        const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${projectName}`, {
-            method: 'GET',
-            headers: {
-                Authorization: `Bearer ${cloudflareApiToken}`,
-                'Content-Type': 'application/json',
-            },
-        });
-
-        if (!response.ok && response.status === 404) {
-            console.log(`Project ${projectName} does not exist. Creating...`);
-            await createProject();
-        } else {
-            console.log(`Project ${projectName} already exists.`);
+        execSync(`wrangler pages project create "${projectName}" --production-branch main`, { stdio: 'inherit' });
+        console.log(`Pages project "${projectName}" is ready.`);
+    } catch (error: any) {
+        const output = String(error?.stderr ?? error?.stdout ?? error?.message ?? error);
+        if (/already exists/i.test(output)) {
+            console.log(`Pages project "${projectName}" already exists, continuing.`);
+            return;
         }
-    } catch (error) {
-        console.error('Error checking project existence:', error);
-        throw error;
-    }
-};
-
-const createProject = async () => {
-    try {
-        const response = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects`, {
-            method: 'POST',
-            headers: {
-                Authorization: `Bearer ${cloudflareApiToken}`,
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                name: projectName,
-                production_branch: 'main',
-            }),
-        });
-
-        if (!response.ok) {
-            throw new Error(`Error creating project: ${response.statusText}`);
-        }
-
-        const data = await response.json() as { success: boolean, result: { name: string } };
-        
-        if (!data.success) {
-            throw new Error('Failed to create project');
-        }
-
-        // 等待项目创建完成
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        
-        // 验证项目是否真正创建成功
-        const verifyResponse = await fetch(
-            `https://api.cloudflare.com/client/v4/accounts/${accountId}/pages/projects/${projectName}`,
-            {
-                headers: {
-                    Authorization: `Bearer ${cloudflareApiToken}`,
-                    'Content-Type': 'application/json',
-                },
-            }
+        console.error('Failed to create Cloudflare Pages project. Raw output:\n', output);
+        throw new Error(
+            `Failed to create Cloudflare Pages project "${projectName}". ` +
+            `请检查：1) CLOUDFLARE_API_TOKEN 是否具备 "Cloudflare Pages: Edit" 权限；` +
+            `2) 项目名是否唯一（${projectName}.pages.dev 未被占用）；` +
+            `3) PROJECT_NAME 是否合法（仅小写字母/数字/连字符）。`
         );
-
-        if (!verifyResponse.ok) {
-            throw new Error('Project creation verification failed');
-        }
-
-        const verifyData = await verifyResponse.json() as { success: boolean };
-        if (!verifyData.success) {
-            throw new Error('Project creation could not be verified');
-        }
-
-        console.log(`Project ${projectName} created and verified successfully`);
-    } catch (error) {
-        console.error('Error creating project:', error);
-        throw error;
     }
 };
 
 const main = async () => {
     try {
+        if (!cloudflareApiToken || !accountId) {
+            throw new Error('缺少必需的环境变量：CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID');
+        }
+        if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(projectName)) {
+            throw new Error(`PROJECT_NAME "${projectName}" 非法，必须匹配 ^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`);
+        }
+
         setupWranglerConfig();
-        await checkProjectExists();
+        ensurePagesProject();
         checkAndCreateDatabase();
         applyMigrations();
         createPagesSecret();
